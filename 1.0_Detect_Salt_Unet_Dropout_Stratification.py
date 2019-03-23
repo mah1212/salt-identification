@@ -249,60 +249,70 @@ depths_df_normal.head()
 depths_df = pd.read_csv('depths.csv', index_col='id')
 depths_df.head()
 print(len(depths_df))
-print(depths_df.shape) # (22000, 0)
 
+print(train_df.shape) # (4000, 0)
+print(depths_df.shape) # (22000, 1)
 
-# check for commoon id
-common_idx = train_df.index.intersection(depths_df.index)
-print (common_idx)
-
-train_df.loc[common_idx].head()
-depths_df.loc[common_idx].head()
-
-
-#---- Image upsample / downsample ---
-from skimage.transform import resize
-img_size_original = 101
-img_size_target = 128
-
-def upsample(img):# not used
-    if img_size_original == img_size_target:
-        return img
-    return resize(img, (img_size_target, img_size_target), mode='constant', preserve_range=True)
-    
-def downsample(img):# not used
-    if img_size_original == img_size_target:
-        return img
-    return resize(img, (img_size_original, img_size_original), mode='constant', preserve_range=True)
-
-
-
-
+# =============================================================================
+# 
+# # check for commoon id
+# common_idx = train_df.index.intersection(depths_df.index)
+# print (common_idx)
+# 
+# train_df.loc[common_idx].head()
+# depths_df.loc[common_idx].head()
+# 
+# 
+# =============================================================================
 
 #---- Create test data --------
 # Pandas join/merge https://www.shanelynn.ie/merge-join-dataframes-python-pandas-index-1/
 # https://pandas.pydata.org/pandas-docs/version/0.22/generated/pandas.DataFrame.join.html
 # https://chrisalbon.com/python/data_wrangling/pandas_join_merge_dataframe/    
+
+print(train_df.shape) # (4000, 0)
+print(depths_df.shape) # (22000, 1)
+
+
+# df.join will join columns on matching ids!
 train_df = train_df.join(depths_df)
 train_df.shape # (4000, 1)
 train_df.head()
 
-print(len(~depths_df)) # 22000
-print(~depths_df.shape) # shows error
+
+# tilde ~ means not
 
 print(~depths_df.index.isin(train_df.index))
 depths_df[~depths_df.index.isin(train_df.index)]
+
+# take train index
+# take depth index where depth index is in train index
+# take only depth index where depth index is not in train index
 
 test_df = depths_df[~depths_df.index.isin(train_df.index)]
 test_df.shape # (18000, 1)
 test_df.head()
 
+#---- Image upsample / downsample ---
+
+from skimage.transform import resize
+
+img_size_original = 101
+img_size_target = 128
+
+def upsample(img):# 
+    if img_size_original == img_size_target:
+        return img
+    return resize(img, (img_size_target, img_size_target), mode='constant', preserve_range=True)
+    
+def downsample(img):# 
+    if img_size_original == img_size_target:
+        return img
+    return resize(img, (img_size_original, img_size_original), mode='constant', preserve_range=True)
+
 
 import tensorflow as tf
 from keras.preprocessing.image import img_to_array, array_to_img, load_img
-
-
-
 
 
 #------ Load image into train df -----
@@ -312,10 +322,6 @@ train_df.head()
 # Read train image, train mask
 train_img_dir = train_dir / 'images'
 print(train_img_dir)
-
-
-
-
 
 # Load image, convert image to grayscale, normalize image, convert image to numpy array
 
@@ -339,6 +345,7 @@ train_df.shape # (4000, 3)
 
 
 # Numpy Sum https://www.sharpsightlabs.com/blog/numpy-sum/
+# Numpy sum https://towardsdatascience.com/understanding-numpy-sum-1587eec69527
 # Pandas map function https://www.youtube.com/watch?v=yuNbn9cczjA
 
 '''
@@ -352,7 +359,8 @@ class against the raw coverage.
 
 '''
 
-#train_df.img_masks.map(np.sum)
+
+# train_map_np_sum['Map Sum'] = train_df.img_masks.map(np.sum)
 
 #print(pow(121, 2))
 
@@ -428,7 +436,18 @@ for i, idx in enumerate(train_df.index[:max_images]):
     
 plt.suptitle('Green: Salt. Top-left: coverage_class, Top-right: coverage, Bottom-left: depth')
 
+'''
+>>> img.dtype
+dtype('float64')
 
+>>> img.nbytes
+648208
+
+Internally, img is kept in memory as one contiguous block of 648,208 bytes. strides is hence a sort of “metadata”-like attribute that tells us how many bytes we need to jump ahead to move to the next position along each axis. We move in blocks of 8 bytes along the rows but need to traverse 8 x 319 = 2,552 bytes to move “down” from one row to another.
+
+>>> img.strides
+(2552, 8)
+'''
 
 
 #------------------ Train Test Split ----------------------
@@ -724,6 +743,253 @@ model.summary() # same as above
 
 
 
+# ---------------- Data Augmentation ------------------------------------------
+
+# =============================================================================
+# 
+# 3.1 Data Augmentation
+# 
+# Data augmentation is essential to teach the network the desired invariance and
+# robustness properties, when only few training samples are available. In case of
+# microscopical images we primarily need shift and rotation invariance as well as
+# robustness to deformations and gray value variations. Especially random elas-
+# tic deformations of the training samples seem to be the key concept to train
+# a segmentation network with very few annotated images. We generate smooth
+# deformations using random displacement vectors on a coarse 3 by 3 grid. The
+# displacements are sampled from a Gaussian distribution with 10 pixels standard
+# deviation. Per-pixel displacements are then computed using bicubic interpola-
+# tion. Drop-out layers at the end of the contracting path perform further implicit
+# data augmentation.
+# 
+# 
+# =============================================================================
+
+
+# data augmentation for x_train, y_train
+# x in x_train
+# for x in x_train
+# np.fliplr(x) for x in x_train
+# np.append(x_train, [np.fliplr(x) for x in x_train], axis=0)
+
+# =============================================================================
+# 
+# >>> np.append([1, 2, 3], [[4, 5, 6], [7, 8, 9]])
+# array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+# 
+# When axis is specified, values must have the correct shape.
+# >>>
+# 
+# >>> np.append([[1, 2, 3], [4, 5, 6]], [[7, 8, 9]], axis=0)
+# array([[1, 2, 3],
+#        [4, 5, 6],
+#        [7, 8, 9]])
+# >>> np.append([[1, 2, 3], [4, 5, 6]], [7, 8, 9], axis=0)
+# Traceback (most recent call last):
+# ...
+# ValueError: arrays must have same number of dimensions
+# 
+# 
+# =============================================================================
+
+
+#----NOTE: --------------------
+#110: UserWarning: Anti-aliasing will be enabled by default in skimage 0.15 to avoid aliasing artifacts when down-sampling images.
+#  warn("Anti-aliasing will be enabled by default in skimage 0.15 to "
+
+x_train = np.append(x_train, [np.fliplr(x) for x in x_train], axis=0)
+y_train = np.append(y_train, [np.fliplr(x) for x in y_train], axis=0)
+
+
+fig, axs = plt.subplots(2, 10, figsize=(15,3))
+for i in range(10):
+    axs[0][i].imshow(x_train[i].squeeze(), cmap="Greys")
+    axs[0][i].imshow(y_train[i].squeeze(), cmap="Greens", alpha=0.3)
+    axs[1][i].imshow(x_train[int(len(x_train)/2 + i)].squeeze(), cmap="Greys")
+    axs[1][i].imshow(y_train[int(len(y_train)/2 + i)].squeeze(), cmap="Greens", alpha=0.3)
+fig.suptitle("Top row: original images, bottom row: augmented images")
+
+
+from keras.callbacks import EarlyStopping
+from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ReduceLROnPlateau
+
+early_stopping = EarlyStopping(patience=10, verbose=1)
+
+model_checkpoint = ModelCheckpoint(filepath = "best_model_todate", 
+                                   save_best_only=True, 
+                                   #save_weights_only = True,
+                                   verbose=1)
+
+reduce_lr = ReduceLROnPlateau(factor=0.1, patience=5, min_lr=0.00001, verbose=1)
+
+epochs = 2
+batch_size = 32
+
+history = model.fit(x_train, y_train,
+                    validation_data=[x_valid, y_valid], 
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    callbacks=[early_stopping, model_checkpoint, reduce_lr])
+
+
+from keras.models import load_model
+
+model = load_model("best_model_todate")
+
+
+
+# Predict the validation set
+
+# =============================================================================
+# 
+# predict
+# 
+# predict(x, batch_size=None, verbose=0, steps=None, callbacks=None)
+# 
+# Generates output predictions for the input samples.
+# 
+# Computation is done in batches.
+# 
+# Arguments
+# 
+#     x: The input data, as a Numpy array (or list of Numpy arrays if the model has multiple inputs).
+#     batch_size: Integer. If unspecified, it will default to 32.
+#     verbose: Verbosity mode, 0 or 1.
+#     steps: Total number of steps (batches of samples) before declaring the prediction round finished. Ignored with the default value of None.
+#     callbacks: List of keras.callbacks.Callback instances. List of callbacks to apply during prediction. See callbacks.
+# 
+# Returns
+# 
+# Numpy array(s) of predictions.
+# 
+# Raises
+# 
+#     ValueError: In case of mismatch between the provided input data and the model's expectations, or in case a stateful model receives a number of samples that is not a multiple of the batch size.
+# 
+# 
+# =============================================================================
+
+
+
+
+# --- Important: model.predict() expects the first parameter to be a numpy array. 
+
+pred_valid = model.predict(x_valid).reshape(-1, img_size_target, img_size_target)
+
+pred_valid = np.array([downsample(x) for x in pred_valid])
+
+y_valid_original = np.array([train_df.loc[idx].img_masks for idx in ids_valid])
+
+
+
+
+max_images = 48
+grid_width = 12
+grid_height = int(max_images / grid_width)
+
+fig, axs = plt.subplots(grid_height, grid_width, figsize=(grid_width, grid_height))
+
+for i, idx in enumerate(ids_valid[:max_images]):
+    img = train_df.loc[idx].images
+    mask = train_df.loc[idx].img_masks
+    pred = pred_valid[i]
+    ax = axs[int(i / grid_width), i % grid_width]
+    ax.imshow(img, cmap="Greys")
+    ax.imshow(mask, alpha=0.3, cmap="Greens")
+    ax.imshow(pred, alpha=0.3, cmap="OrRd")
+    ax.text(1, img_size_original-1, train_df.loc[idx].z, color="black")
+    ax.text(img_size_original - 1, 1, round(train_df.loc[idx].coverage, 2), color="black", ha="right", va="top")
+    ax.text(1, 1, train_df.loc[idx].coverage_class, color="black", ha="left", va="top")
+    ax.set_yticklabels([])
+    ax.set_xticklabels([])
+plt.suptitle("Green: salt, Red: prediction. Top-left: coverage class, top-right: salt coverage, bottom-left: depth")
+
+
+
+
+
+# ------------- IoU Metric ---------------
+# src: https://www.kaggle.com/aglotero/another-iou-metric
+
+def iou_metric(y_true_in, y_pred_in, print_table=False):
+    labels = y_true_in
+    y_pred = y_pred_in
+    
+    true_objects = 2
+    pred_objects = 2
+
+    intersection = np.histogram2d(labels.flatten(), y_pred.flatten(), bins=(true_objects, pred_objects))[0]
+
+    # Compute areas (needed for finding the union between all objects)
+    area_true = np.histogram(labels, bins = true_objects)[0]
+    area_pred = np.histogram(y_pred, bins = pred_objects)[0]
+    area_true = np.expand_dims(area_true, -1)
+    area_pred = np.expand_dims(area_pred, 0)
+
+    # Compute union
+    union = area_true + area_pred - intersection
+
+    # Exclude background from the analysis
+    intersection = intersection[1:,1:]
+    union = union[1:,1:]
+    union[union == 0] = 1e-9
+
+    # Compute the intersection over union
+    iou = intersection / union
+
+    # Precision helper function
+    def precision_at(threshold, iou):
+        matches = iou > threshold
+        true_positives = np.sum(matches, axis=1) == 1   # Correct objects
+        false_positives = np.sum(matches, axis=0) == 0  # Missed objects
+        false_negatives = np.sum(matches, axis=1) == 0  # Extra objects
+        tp, fp, fn = np.sum(true_positives), np.sum(false_positives), np.sum(false_negatives)
+        return tp, fp, fn
+
+    # Loop over IoU thresholds
+    prec = []
+    if print_table:
+        print("Thresh\tTP\tFP\tFN\tPrec.")
+    for t in np.arange(0.5, 1.0, 0.05):
+        tp, fp, fn = precision_at(t, iou)
+        if (tp + fp + fn) > 0:
+            p = tp / (tp + fp + fn)
+        else:
+            p = 0
+        if print_table:
+            print("{:1.3f}\t{}\t{}\t{}\t{:1.3f}".format(t, tp, fp, fn, p))
+        prec.append(p)
+    
+    if print_table:
+        print("AP\t-\t-\t-\t{:1.3f}".format(np.mean(prec)))
+    return np.mean(prec)
+
+def iou_metric_batch(y_true_in, y_pred_in):
+    batch_size = y_true_in.shape[0]
+    metric = []
+    for batch in range(batch_size):
+        value = iou_metric(y_true_in[batch], y_pred_in[batch])
+        metric.append(value)
+    return np.mean(metric)
+
+thresholds = np.linspace(0, 1, 50)
+ious = np.array([iou_metric_batch(y_valid_original, np.int32(pred_valid > threshold)) for threshold in tqdm_notebook(thresholds)])
+
+threshold_best_index = np.argmax(ious[9:-10]) + 9
+iou_best = ious[threshold_best_index]
+threshold_best = thresholds[threshold_best_index]
+
+plt.plot(thresholds, ious)
+plt.plot(threshold_best, iou_best, "xr", label="Best threshold")
+plt.xlabel("Threshold")
+plt.ylabel("IoU")
+plt.title("Threshold vs IoU ({}, {})".format(threshold_best, iou_best))
+plt.legend()
+
+
+
+#===================== Notes & Other project Below =============
+"""
 # Shuffle the data
 
 ''' How to shuffle pandas dataframe?
@@ -1074,6 +1340,11 @@ model = build_model()
 model.summary()
 
 
+
+
+
+
+
 ''' Initialize with pre trained model
 The default value of include_top parameter in VGG16 function is True. 
 This means if you want to use a full layer pre-trained VGG network 
@@ -1400,7 +1671,7 @@ print_structure(weight_file_path)
 
 
 
-
+"""
 import h5py
 # Open the VGG16 weight file
 # f = file
@@ -1543,7 +1814,7 @@ print('Validation steps: ', len(valid_data))
 # 
 # =============================================================================
 
-
+"""
 history = model.fit_generator(train_data_generator, 
                               epochs = epochs_size, 
                               steps_per_epoch = train_steps, 
@@ -1551,13 +1822,15 @@ history = model.fit_generator(train_data_generator,
                               callbacks = [early_stopping, check_point], 
                               class_weight={0:1.0, 1:0.4})
 
+"""
 '''
     Why callbacks? Early Stopping? Checkpoints? Etc?
     What is class_weight doing here?
     How class_weight works?
 '''
 
-
+"""
+"""
 # Preparing test data
 normal_dir = test_dir / 'NORMAL'
 pneumonia_dir = test_dir / 'PNEUMONIA'
@@ -1682,7 +1955,7 @@ for size in [2, 5, 8]:
     
 for _ in range(8):
     print('a')
-
+"""
 
 '''
 Here's my birthday gift analogy: You have a list of things you want for your birthday. If your friends get you all of those things, that's 100% recall, even if they get you some other presents as well. If instead they just bought you other stuff you didn't have on your list (or no presents at all) that is 0% recall.
@@ -2099,6 +2372,8 @@ print(np.concatenate((a[..., None], b[..., None]), axis=2).shape)
 * Importing the entire contents of a module into your global namespace using import * is considered bad practice for several reasons. The idiomatic way is to import numpy as np.
 
 '''    
+
+"""
 data = []
 labels = []
 
@@ -2465,7 +2740,9 @@ def predict_malaria(img_file):
     return result, 'Predicted image is : ' + result + 'with accuracy = ' + str(accuracy)
 
 
-"""from tkinter import Frame, Tk, BOTH, Text, Menu, END
+"""
+"""
+from tkinter import Frame, Tk, BOTH, Text, Menu, END
 from tkinter import filedialog 
 from tkinter import messagebox as mbox
 
@@ -2513,7 +2790,7 @@ def main():
 
 if __name__ == '__main__':
     main()"""
-    
+"""    
 '''
 Note:
 Kernel size vs filter?
@@ -2556,4 +2833,4 @@ channel and combine these to get output channels. So, number of filter and outpu
 channels are same.
     
 '''
-    
+#    
